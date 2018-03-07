@@ -49,6 +49,7 @@
 		<bogons>
 			<interval>monthly</interval>
 		</bogons>
+		<shellcmd>/bin/sh /etc/rc.d/AISense_base_check</shellcmd>
 	</system>
 	<interfaces>
 		<wan>
