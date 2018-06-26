@@ -1,10 +1,10 @@
 <?xml version="1.0"?>
-<aisense>
+<disense>
 	<version>15.4</version>
 	<lastchange/>
 	<system>
 		<optimization>normal</optimization>
-		<hostname>AISense</hostname>
+		<hostname>DISense</hostname>
 		<domain>localdomain</domain>
 		<dnsserver/>
 		<dnsallowoverride/>
@@ -278,4 +278,4 @@
 		<hideversion/>
 		<dnssecstripped/>
 	</unbound>
-</aisense>
+</disense>

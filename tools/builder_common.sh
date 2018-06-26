@@ -2,7 +2,64 @@
 #
 # builder_common.sh
 #
+# part of pfSense (https://www.pfsense.org)
+# Copyright (c) 2004-2016 Electric Sheep Fencing, LLC
+# All rights reserved.
 #
+# NanoBSD portions of the code
+# Copyright (c) 2005 Poul-Henning Kamp.
+# and copied from nanobsd.sh
+# All rights reserved.
+#
+# FreeSBIE portions of the code
+# Copyright (c) 2005 Dario Freni
+# and copied from FreeSBIE project
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#
+# 1. Redistributions of source code must retain the above copyright notice,
+#    this list of conditions and the following disclaimer.
+#
+# 2. Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in
+#    the documentation and/or other materials provided with the
+#    distribution.
+#
+# 3. All advertising materials mentioning features or use of this software
+#    must display the following acknowledgment:
+#    "This product includes software developed by the pfSense Project
+#    for use in the pfSense® software distribution. (http://www.pfsense.org/).
+#
+# 4. The names "pfSense" and "pfSense Project" must not be used to
+#    endorse or promote products derived from this software without
+#    prior written permission. For written permission, please contact
+#    coreteam@pfsense.org.
+#
+# 5. Products derived from this software may not be called "pfSense"
+#    nor may "pfSense" appear in their names without prior written
+#    permission of the Electric Sheep Fencing, LLC.
+#
+# 6. Redistributions of any form whatsoever must retain the following
+#    acknowledgment:
+#
+# "This product includes software developed by the pfSense Project
+# for use in the pfSense software distribution (http://www.pfsense.org/).
+#
+# THIS SOFTWARE IS PROVIDED BY THE pfSense PROJECT ``AS IS'' AND ANY
+# EXPRESSED OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE pfSense PROJECT OR
+# ITS CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+# SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+# NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+# LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+# HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+# STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
+# OF THE POSSIBILITY OF SUCH DAMAGE.
+
 if [ -n "${IMAGES_FINAL_DIR}" -a "${IMAGES_FINAL_DIR}" != "/" ]; then
 	mkdir -p ${IMAGES_FINAL_DIR}
 else
@@ -481,6 +538,363 @@ make_world() {
 	unset makeargs
 }
 
+nanobsd_image_filename() {
+	local _size="$1"
+	local _type="$2"
+	local _upgrade="$3"
+
+	if [ -z "$_upgrade" ]; then
+		local _template=${NANOBSD_IMG_TEMPLATE}
+	else
+		local _template=${NANOBSD_UPGRADE_TEMPLATE}
+	fi
+
+	echo "$_template" | sed \
+		-e "s,%%SIZE%%,${_size},g" \
+		-e "s,%%TYPE%%,${_type},g"
+
+	return 0
+}
+
+# This routine originated in nanobsd.sh
+nanobsd_set_flash_details () {
+	a1=$(echo $1 | tr '[:upper:]' '[:lower:]')
+
+	# Source:
+	#	SanDisk CompactFlash Memory Card
+	#	Product Manual
+	#	Version 10.9
+	#	Document No. 20-10-00038
+	#	April 2005
+	# Table 2-7
+	# NB: notice math error in SDCFJ-4096-388 line.
+	#
+	case "${a1}" in
+		2048|2048m|2048mb|2g)
+			NANO_MEDIASIZE=$((1989999616/512))
+			;;
+		4096|4096m|4096mb|4g)
+			NANO_MEDIASIZE=$((3989999616/512))
+			;;
+		8192|8192m|8192mb|8g)
+			NANO_MEDIASIZE=$((7989999616/512))
+			;;
+		16384|16384m|16384mb|16g)
+			NANO_MEDIASIZE=$((15989999616/512))
+			;;
+		*)
+			echo "Unknown Flash capacity"
+			exit 2
+			;;
+	esac
+
+	NANO_HEADS=16
+	NANO_SECTS=63
+
+	echo ">>> [nanoo] $1"
+	echo ">>> [nanoo] NANO_MEDIASIZE: $NANO_MEDIASIZE"
+	echo ">>> [nanoo] NANO_HEADS: $NANO_HEADS"
+	echo ">>> [nanoo] NANO_SECTS: $NANO_SECTS"
+	echo ">>> [nanoo] NANO_BOOT0CFG: $NANO_BOOT0CFG"
+}
+
+# This routine originated in nanobsd.sh
+create_nanobsd_diskimage () {
+	if [ -z "${1}" ]; then
+		echo ">>> ERROR: Type of image has not been specified"
+		print_error_pfS
+	fi
+	if [ -z "${2}" ]; then
+		echo ">>> ERROR: Size of image has not been specified"
+		print_error_pfS
+	fi
+
+	if [ "${1}" = "nanobsd" ]; then
+		# It's serial
+		export NANO_BOOTLOADER="boot/boot0sio"
+	elif [ "${1}" = "nanobsd-vga" ]; then
+		# It's vga
+		export NANO_BOOTLOADER="boot/boot0"
+	else
+		echo ">>> ERROR: Type of image to create unknown"
+		print_error_pfS
+	fi
+
+	if [ -z "${2}" ]; then
+		echo ">>> ERROR: Media size(s) not specified."
+		print_error_pfS
+	fi
+
+	if [ -z "${2}" ]; then
+		echo ">>> ERROR: FLASH_SIZE is not set."
+		print_error_pfS
+	fi
+
+	LOGFILE=${BUILDER_LOGS}/${1}.${TARGET}
+	# Prepare folder to be put in image
+	customize_stagearea_for_image "${1}"
+	install_default_kernel ${DEFAULT_KERNEL} "no"
+
+	echo ">>> Fixing up NanoBSD Specific items..." | tee -a ${LOGFILE}
+
+	echo "nanobsd" > $FINAL_CHROOT_DIR/etc/platform
+
+	local BOOTCONF=${FINAL_CHROOT_DIR}/boot.config
+	local LOADERCONF=${FINAL_CHROOT_DIR}/boot/loader.conf
+
+	if [ "${1}" = "nanobsd" ]; then
+		# Tell loader to use serial console early.
+		echo "-S115200 -h" >> ${BOOTCONF}
+
+		# Remove old console options if present.
+		[ -f "${LOADERCONF}" ] \
+			&& sed -i "" -Ee "/(console|boot_multicons|boot_serial|hint.uart)/d" ${LOADERCONF}
+		# Activate serial console+video console in loader.conf
+		echo 'loader_color="NO"' >> ${LOADERCONF}
+		echo 'beastie_disable="YES"' >> ${LOADERCONF}
+		echo 'boot_serial="YES"' >> ${LOADERCONF}
+		echo 'console="comconsole"' >> ${LOADERCONF}
+		echo 'comconsole_speed="115200"' >> ${LOADERCONF}
+	fi
+	echo 'autoboot_delay="5"' >> ${LOADERCONF}
+
+	# Old systems will run (pre|post)_upgrade_command from /tmp
+	if [ -f ${FINAL_CHROOT_DIR}${PRODUCT_SHARE_DIR}/pre_upgrade_command ]; then
+		cp -p \
+			${FINAL_CHROOT_DIR}${PRODUCT_SHARE_DIR}/pre_upgrade_command \
+			${FINAL_CHROOT_DIR}/tmp
+	fi
+	if [ -f ${FINAL_CHROOT_DIR}${PRODUCT_SHARE_DIR}/post_upgrade_command ]; then
+		cp -p \
+			${FINAL_CHROOT_DIR}${PRODUCT_SHARE_DIR}/post_upgrade_command \
+			${FINAL_CHROOT_DIR}/tmp
+	fi
+
+	for _NANO_MEDIASIZE in ${2}; do
+		if [ -z "${_NANO_MEDIASIZE}" ]; then
+			continue;
+		fi
+
+		echo ">>> building NanoBSD(${1}) disk image with size ${_NANO_MEDIASIZE} for platform (${TARGET})..." | tee -a ${LOGFILE}
+		echo "" > $BUILDER_LOGS/nanobsd_cmds.sh
+
+		IMG="${IMAGES_FINAL_DIR}/$(nanobsd_image_filename ${_NANO_MEDIASIZE} ${1})"
+		IMGUPDATE="${IMAGES_FINAL_DIR}/$(nanobsd_image_filename ${_NANO_MEDIASIZE} ${1} 1)"
+
+		nanobsd_set_flash_details ${_NANO_MEDIASIZE}
+
+		# These are defined in FlashDevice and on builder_default.sh
+		echo $NANO_MEDIASIZE \
+			$NANO_IMAGES \
+			$NANO_SECTS \
+			$NANO_HEADS \
+			$NANO_CODESIZE \
+			$NANO_CONFSIZE \
+			$NANO_DATASIZE |
+awk '
+{
+	printf "# %s\n", $0
+
+	# size of cylinder in sectors
+	cs = $3 * $4
+
+	# number of full cylinders on media
+	cyl = int ($1 / cs)
+
+	# output fdisk geometry spec, truncate cyls to 1023
+	if (cyl <= 1023)
+		print "g c" cyl " h" $4 " s" $3
+	else
+		print "g c" 1023 " h" $4 " s" $3
+
+	if ($7 > 0) {
+		# size of data partition in full cylinders
+		dsl = int (($7 + cs - 1) / cs)
+	} else {
+		dsl = 0;
+	}
+
+	# size of config partition in full cylinders
+	csl = int (($6 + cs - 1) / cs)
+
+	if ($5 == 0) {
+		# size of image partition(s) in full cylinders
+		isl = int ((cyl - dsl - csl) / $2)
+	} else {
+		isl = int (($5 + cs - 1) / cs)
+	}
+
+	# First image partition start at second track
+	print "p 1 165 " $3, isl * cs - $3
+	c = isl * cs;
+
+	# Second image partition (if any) also starts offset one
+	# track to keep them identical.
+	if ($2 > 1) {
+		print "p 2 165 " $3 + c, isl * cs - $3
+		c += isl * cs;
+	}
+
+	# Config partition starts at cylinder boundary.
+	print "p 3 165 " c, csl * cs
+	c += csl * cs
+
+	# Data partition (if any) starts at cylinder boundary.
+	if ($7 > 0) {
+		print "p 4 165 " c, dsl * cs
+	} else if ($7 < 0 && $1 > c) {
+		print "p 4 165 " c, $1 - c
+	} else if ($1 < c) {
+		print "Disk space overcommitted by", \
+		    c - $1, "sectors" > "/dev/stderr"
+		exit 2
+	}
+
+	# Force slice 1 to be marked active. This is necessary
+	# for booting the image from a USB device to work.
+	print "a 1"
+}
+	' > ${IMAGES_FINAL_DIR}/_.fdisk
+
+		MNT=${IMAGES_FINAL_DIR}/_.mnt
+		mkdir -p ${MNT}
+
+		dd if=/dev/zero of=${IMG} bs=${NANO_SECTS}b \
+			count=0 seek=$((${NANO_MEDIASIZE}/${NANO_SECTS})) 2>&1 >> ${LOGFILE}
+
+		MD=$(mdconfig -a -t vnode -f ${IMG} -x ${NANO_SECTS} -y ${NANO_HEADS})
+		trap "mdconfig -d -u ${MD}; return" 1 2 15 EXIT
+
+		fdisk -i -f ${IMAGES_FINAL_DIR}/_.fdisk ${MD} 2>&1 >> ${LOGFILE}
+		fdisk ${MD} 2>&1 >> ${LOGFILE}
+
+		boot0cfg -t 100 -B -b ${FINAL_CHROOT_DIR}/${NANO_BOOTLOADER} ${NANO_BOOT0CFG} ${MD} 2>&1 >> ${LOGFILE}
+
+		# Create first image
+		bsdlabel -m i386 -w -B -b ${FINAL_CHROOT_DIR}/boot/boot ${MD}s1 2>&1 >> ${LOGFILE}
+		bsdlabel -m i386 ${MD}s1 2>&1 >> ${LOGFILE}
+		local _label=$(lc ${PRODUCT_NAME})
+		newfs -L ${_label}0 ${NANO_NEWFS} /dev/${MD}s1a 2>&1 >> ${LOGFILE}
+		mount /dev/ufs/${_label}0 ${MNT}
+		if [ $? -ne 0 ]; then
+			echo ">>> ERROR: Something wrong happened during mount of first slice image creation. STOPPING!" | tee -a ${LOGFILE}
+			print_error_pfS
+		fi
+		# Consider the unmounting as well
+		trap "umount /dev/ufs/${_label}0; mdconfig -d -u ${MD}; return" 1 2 15 EXIT
+
+		clone_directory_contents ${FINAL_CHROOT_DIR} ${MNT}
+
+		# Set NanoBSD image size
+		echo "${_NANO_MEDIASIZE}" > ${MNT}/etc/nanosize.txt
+
+		echo "/dev/ufs/${_label}0 / ufs ro,sync,noatime 1 1" > ${MNT}/etc/fstab
+		if [ $NANO_CONFSIZE -gt 0 ] ; then
+			echo "/dev/ufs/cf /cf ufs ro,sync,noatime 1 1" >> ${MNT}/etc/fstab
+		fi
+
+		umount ${MNT}
+		# Restore the original trap
+		trap "mdconfig -d -u ${MD}; return" 1 2 15 EXIT
+
+		# Setting NANO_IMAGES to 1 and NANO_INIT_IMG2 will tell
+		# NanoBSD to only create one partition.  We default to 2
+		# partitions in case anything happens to the first the
+		# operator can boot from the 2nd and should be OK.
+
+		# Before just going to use dd for duplicate think!
+		# The images are created as sparse so lets take advantage
+		# of that by just exec some commands.
+		if [ $NANO_IMAGES -gt 1 -a $NANO_INIT_IMG2 -gt 0 ] ; then
+			# Duplicate to second image (if present)
+			echo ">>> Creating NanoBSD second slice by duplicating first slice." | tee -a ${LOGFILE}
+			# Create second image
+			dd if=/dev/${MD}s1 of=/dev/${MD}s2 conv=sparse bs=64k 2>&1 >> ${LOGFILE}
+			tunefs -L ${_label}1 /dev/${MD}s2a 2>&1 >> ${LOGFILE}
+			mount /dev/ufs/${_label}1 ${MNT}
+			if [ $? -ne 0 ]; then
+				echo ">>> ERROR: Something wrong happened during mount of second slice image creation. STOPPING!" | tee -a ${LOGFILE}
+				print_error_pfS
+			fi
+			# Consider the unmounting as well
+			trap "umount /dev/ufs/${_label}1; mdconfig -d -u ${MD}; return" 1 2 15 EXIT
+
+			echo "/dev/ufs/${_label}1 / ufs ro,sync,noatime 1 1" > ${MNT}/etc/fstab
+			if [ $NANO_CONFSIZE -gt 0 ] ; then
+				echo "/dev/ufs/cf /cf ufs ro,sync,noatime 1 1" >> ${MNT}/etc/fstab
+			fi
+
+			umount ${MNT}
+			# Restore the trap back
+			trap "mdconfig -d -u ${MD}; return" 1 2 15 EXIT
+		fi
+
+		# Create Data slice, if any.
+		# Note the changing of the variable to NANO_CONFSIZE
+		# from NANO_DATASIZE.  We also added glabel support
+		# and populate the Product configuration from the /cf
+		# directory located in FINAL_CHROOT_DIR
+		if [ $NANO_CONFSIZE -gt 0 ] ; then
+			echo ">>> Creating /cf area to hold config.xml"
+			newfs -L cf ${NANO_NEWFS} /dev/${MD}s3 2>&1 >> ${LOGFILE}
+			# Mount data partition and copy contents of /cf
+			# Can be used later to create custom default config.xml while building
+			mount /dev/ufs/cf ${MNT}
+			if [ $? -ne 0 ]; then
+				echo ">>> ERROR: Something wrong happened during mount of cf slice image creation. STOPPING!" | tee -a ${LOGFILE}
+				print_error_pfS
+			fi
+			# Consider the unmounting as well
+			trap "umount /dev/ufs/cf; mdconfig -d -u ${MD}; return" 1 2 15 EXIT
+
+			clone_directory_contents ${FINAL_CHROOT_DIR}/cf ${MNT}
+
+			umount ${MNT}
+			# Restore the trap back
+			trap "mdconfig -d -u ${MD}; return" 1 2 15 EXIT
+		else
+			">>> [nanoo] NANO_CONFSIZE is not set. Not adding a /conf partition.. You sure about this??" | tee -a ${LOGFILE}
+		fi
+
+		echo ">>> [nanoo] Creating NanoBSD upgrade file from first slice..." | tee -a ${LOGFILE}
+		dd if=/dev/${MD}s1 of=$IMGUPDATE conv=sparse bs=64k 2>&1 >> ${LOGFILE}
+
+		mdconfig -d -u $MD
+		# Restore default action
+		trap "-" 1 2 15 EXIT
+
+		# Check each image and ensure that they are over
+		# 3 megabytes.  If either image is under 20 megabytes
+		# in size then error out.
+		IMGSIZE=$(stat -f "%z" ${IMG})
+		IMGUPDATESIZE=$(stat -f "%z" ${IMGUPDATE})
+		CHECKSIZE="20040710"
+		if [ "$IMGSIZE" -lt "$CHECKSIZE" ]; then
+			echo ">>> ERROR: Something went wrong when building NanoBSD.  The image size is under 20 megabytes!" | tee -a ${LOGFILE}
+			print_error_pfS
+		fi
+		if [ "$IMGUPDATESIZE" -lt "$CHECKSIZE" ]; then
+			echo ">>> ERROR: Something went wrong when building NanoBSD upgrade image.  The image size is under 20 megabytes!" | tee -a ${LOGFILE}
+			print_error_pfS
+		fi
+
+		# Wrap up the show, Johnny
+		echo ">>> NanoBSD Image completed for size: $_NANO_MEDIASIZE." | tee -a ${LOGFILE}
+
+		gzip -qf $IMG &
+		_bg_pids="${_bg_pids}${_bg_pids:+ }$!"
+		gzip -qf $IMGUPDATE &
+		_bg_pids="${_bg_pids}${_bg_pids:+ }$!"
+	done
+
+	unset IMG
+	unset IMGUPDATE
+	unset IMGUPDATESIZE
+	unset IMGSIZE
+
+	ls -lah $IMAGES_FINAL_DIR
+}
+
 # This routine creates a ova image that contains
 # a ovf and vmdk file. These files can be imported
 # right into vmware or virtual box.
@@ -742,7 +1156,6 @@ clone_to_staging_area() {
 	# Clone everything to the final staging area
 	echo -n ">>> Cloning everything to ${STAGE_CHROOT_DIR} staging area..."
 	LOGFILE=${BUILDER_LOGS}/cloning.${TARGET}.log
-	
 
 	tar -C ${PRODUCT_SRC} -c -f - . | \
 		tar -C ${STAGE_CHROOT_DIR} -x -p -f -
@@ -825,6 +1238,7 @@ clone_to_staging_area() {
 
 	core_pkg_create rc "" ${CORE_PKG_VERSION} ${STAGE_CHROOT_DIR}
 	core_pkg_create base "" ${CORE_PKG_VERSION} ${STAGE_CHROOT_DIR}
+	core_pkg_create base-nanobsd "" ${CORE_PKG_VERSION} ${STAGE_CHROOT_DIR}
 	core_pkg_create default-config "" ${CORE_PKG_VERSION} ${STAGE_CHROOT_DIR}
 
 	local DEFAULTCONF=${STAGE_CHROOT_DIR}/conf.default/config.xml
@@ -901,7 +1315,8 @@ customize_stagearea_for_image() {
 
 	if [ -n "$2" ]; then
 		_default_config="$2"
-	elif [ "${_image_type}" = "memstickserial" -o \
+	elif [ "${_image_type}" = "nanobsd" -o \
+	     "${_image_type}" = "memstickserial" -o \
 	     "${_image_type}" = "memstickadi" ]; then
 		_default_config="default-config-serial"
 	elif [ "${_image_type}" = "ova" ]; then
@@ -915,6 +1330,23 @@ customize_stagearea_for_image() {
 
 	pkg_chroot_add ${FINAL_CHROOT_DIR} rc
 	pkg_chroot_add ${FINAL_CHROOT_DIR} repo
+
+	if [ "${_image_type}" = "nanobsd" -o \
+	     "${_image_type}" = "nanobsd-vga" ]; then
+
+		mkdir -p ${FINAL_CHROOT_DIR}/root/var/db \
+			 ${FINAL_CHROOT_DIR}/root/var/cache \
+			 ${FINAL_CHROOT_DIR}/var/db/pkg \
+			 ${FINAL_CHROOT_DIR}/var/cache/pkg
+		mv -f ${FINAL_CHROOT_DIR}/var/db/pkg ${FINAL_CHROOT_DIR}/root/var/db
+		mv -f ${FINAL_CHROOT_DIR}/var/cache/pkg ${FINAL_CHROOT_DIR}/root/var/cache
+		ln -sf ../../root/var/db/pkg ${FINAL_CHROOT_DIR}/var/db/pkg
+		ln -sf ../../root/var/cache/pkg ${FINAL_CHROOT_DIR}/var/cache/pkg
+
+		pkg_chroot_add ${FINAL_CHROOT_DIR} base-nanobsd
+	else
+		pkg_chroot_add ${FINAL_CHROOT_DIR} base
+	fi
 
 	if [ "${_image_type}" = "iso" -o \
 	     "${_image_type}" = "memstick" -o \
@@ -1366,7 +1798,7 @@ pkg_bootstrap() {
 }
 
 # This routine assists with installing various
-# freebsd ports files into the aisense-fs staging
+# freebsd ports files into the disense-fs staging
 # area.
 install_pkg_install_ports() {
 	local MAIN_PKG="${1}"
@@ -1406,8 +1838,8 @@ install_bsdinstaller() {
 	sed -i '' -e "s,%%PRODUCT_NAME%%,${PRODUCT_NAME}," \
 		  -e "s,%%PRODUCT_VERSION%%,${PRODUCT_VERSION}," \
 		  -e "s,%%ARCH%%,${TARGET}," \
-		  ${FINAL_CHROOT_DIR}/usr/local/share/dfuibe_lua/conf/AISense.lua \
-		  ${FINAL_CHROOT_DIR}/usr/local/share/dfuibe_lua/conf/AISense_rescue.lua
+		  ${FINAL_CHROOT_DIR}/usr/local/share/dfuibe_lua/conf/DISense.lua \
+		  ${FINAL_CHROOT_DIR}/usr/local/share/dfuibe_lua/conf/DISense_rescue.lua
 	echo ">>> Installing BSDInstaller in chroot (${FINAL_CHROOT_DIR})... (finished)"
 }
 
@@ -1527,8 +1959,7 @@ pkg_repo_rsync() {
 		# https://github.com/freebsd/pkg/issues/1364
 		#
 		if script -aq ${_logfile} pkg repo ${_real_repo_path}/ \
-		     >/dev/null 2>&1; then	
-		#    ${PKG_REPO_SIGNING_COMMAND} >/dev/null 2>&1; then
+		    signing_command: ${PKG_REPO_SIGNING_COMMAND} >/dev/null 2>&1; then
 			echo "Done!" | tee -a ${_logfile}
 		else
 			echo "Failed!" | tee -a ${_logfile}
@@ -1537,17 +1968,18 @@ pkg_repo_rsync() {
 		fi
 
 		local _pkgfile="${_repo_path}/Latest/pkg.txz"
-		#if [ -e ${_pkgfile} ]; then
-		#	echo -n ">>> Signing Latest/pkg.txz for bootstraping... " | tee -a ${_logfile}
-		#	if script -aq ${_logfile} echo -n "$(sha256 -q ${_repo_path}/Latest/pkg.txz)" | openssl dgst -sha256 -sign ${PKG_REPO_SIGNING_COMMAND} \
-		#		-binary -out ${_repo_path}/Latest/pkg.txz.pubkeysig; then
-		#		echo "Done!" | tee -a ${_logfile}
-		#	else
-		#		echo "Failed!" | tee -a ${_logfile}
-		#		echo ">>> ERROR: An error occurred trying to sign Latest/pkg.txz"
-		#		print_error_pfS
-		#	fi
-		#fi
+		if [ -e ${_pkgfile} ]; then
+			echo -n ">>> Signing Latest/pkg.txz for bootstraping... " | tee -a ${_logfile}
+
+			if sha256 -q ${_pkgfile} | ${PKG_REPO_SIGNING_COMMAND} \
+			    > ${_pkgfile}.sig 2>/dev/null; then
+				echo "Done!" | tee -a ${_logfile}
+			else
+				echo "Failed!" | tee -a ${_logfile}
+				echo ">>> ERROR: An error occurred trying to sign Latest/pkg.txz"
+				print_error_pfS
+			fi
+		fi
 	fi
 
 	if [ -n "${DO_NOT_UPLOAD}" ]; then
@@ -1579,15 +2011,15 @@ pkg_repo_rsync() {
 		if [ -n "${_IS_RELEASE}" -o "${_repo_path_param}" = "${CORE_PKG_PATH}" ]; then
 			for _pkg_final_rsync_hostname in ${PKG_FINAL_RSYNC_HOSTNAME}; do
 				# Send .real* directories first to prevent having a broken repo while transfer happens
-				local _cmd="rsync -Have \"ssh -i /root/.ssh/id_rsa -p ${PKG_FINAL_RSYNC_SSH_PORT} -o StrictHostKeyChecking=no\" \
-					--timeout=120  ${PKG_RSYNC_DESTDIR}/./${_repo_base%%-core}* \
+				local _cmd="rsync -Have \"ssh -p ${PKG_FINAL_RSYNC_SSH_PORT}\" \
+					--timeout=60 ${PKG_RSYNC_DESTDIR}/./${_repo_base%%-core}* \
 					--include=\"/*\" --include=\"*/.real*\" --include=\"*/.real*/***\" \
 					--exclude=\"*\" \
 					${PKG_FINAL_RSYNC_USERNAME}@${_pkg_final_rsync_hostname}:${PKG_FINAL_RSYNC_DESTDIR}"
 
 				echo -n ">>> Sending updated packages to ${_pkg_final_rsync_hostname}... " | tee -a ${_logfile}
-				if script -aq ${_logfile} ssh -p ${PKG_RSYNC_SSH_PORT} -o StrictHostKeyChecking=no \
-					${PKG_RSYNC_USERNAME}@${_pkg_rsync_hostname} ${_cmd}; then
+				if script -aq ${_logfile} ssh -p ${PKG_RSYNC_SSH_PORT} \
+					${PKG_RSYNC_USERNAME}@${_pkg_rsync_hostname} ${_cmd} >/dev/null 2>&1; then
 					echo "Done!" | tee -a ${_logfile}
 				else
 					echo "Failed!" | tee -a ${_logfile}
@@ -1652,6 +2084,10 @@ poudriere_possible_archs() {
 		if [ -f /usr/local/bin/qemu-arm-static ]; then
 			# Make sure binmiscctl is ok
 			/usr/local/etc/rc.d/qemu_user_static forcestart >/dev/null 2>&1
+
+			if binmiscctl lookup armv6 >/dev/null 2>&1; then
+				_archs="${_archs} arm.armv6"
+			fi
 		fi
 	fi
 
@@ -1724,7 +2160,7 @@ poudriere_rename_ports() {
 			sed -i '' -e "s,PHP_PFSENSE,PHP_${_product_capital},g" \
 				  -e "s,PFSENSE_SHARED_LIBADD,${_product_capital}_SHARED_LIBADD,g" \
 				  -e "s,pfSense,${PRODUCT_NAME},g" \
-				  -e "s,pfSense.c,${PRODUCT_NAME}\.c,g" \
+				  -e "s,${PRODUCT_NAME}\.c,pfSense.c,g" \
 				${_pdir}/${_pname}/files/config.m4
 
 			sed -i '' -e "s,COMPILE_DL_PFSENSE,COMPILE_DL_${_product_capital}," \
@@ -1734,8 +2170,8 @@ poudriere_rename_ports() {
 				${_pdir}/${_pname}/files/pfSense.c \
 				${_pdir}/${_pname}/files/php_pfSense.h
 
-			cp -r ${_pdir}/${_pname}/files/pfSense.c ${_pdir}/${_pname}/files/AISense.c
-			cp -r ${_pdir}/${_pname}/files/php_pfSense.h ${_pdir}/${_pname}/files/php_AISense.h
+			cp -r ${_pdir}/${_pname}/files/pfSense.c ${_pdir}/${_pname}/files/DISense.c
+			cp -r ${_pdir}/${_pname}/files/php_pfSense.h ${_pdir}/${_pname}/files/php_DISense.h
 		fi
 
 		if [ -d ${_pdir}/${_pname}/files ]; then
@@ -1810,12 +2246,12 @@ poudriere_init() {
 	if ! zfs list ${ZFS_TANK}${ZFS_ROOT} >/dev/null 2>&1; then
 		echo -n ">>> Creating ZFS filesystem ${ZFS_TANK}${ZFS_ROOT}... "
 		if zfs create -o atime=off -o mountpoint=/usr/local${ZFS_ROOT} \
-		  ${ZFS_TANK}/poudriereFILE >/dev/null 2>&1; then
+		    ${ZFS_TANK}${ZFS_ROOT} >/dev/null 2>&1; then
 			echo "Done!"
 		else
 			echo "Failed!"
 			print_error_pfS
-																					fi
+		fi
 	fi
 
 	# Make sure poudriere is installed
@@ -1841,7 +2277,6 @@ BASEFS=/usr/local/poudriere
 USE_PORTLINT=no
 USE_TMPFS=yes
 NOLINUX=yes
-BUILD_AS_NON_ROOT=no
 DISTFILES_CACHE=/usr/ports/distfiles
 CHECK_CHANGED_OPTIONS=yes
 CHECK_CHANGED_DEPS=yes
@@ -1887,7 +2322,12 @@ EOF
 	for jail_arch in ${_archs}; do
 		jail_name=$(poudriere_jail_name ${jail_arch})
 
-		
+		if [ "${jail_arch}" = "arm.armv6" ]; then
+			native_xtools="-x"
+		else
+			native_xtools=""
+		fi
+
 		echo -n ">>> Creating jail ${jail_name}, it may take some time... " | tee -a ${LOGFILE}
 		# XXX: Change -m to git when it's available in poudriere
 		if ! script -aq ${LOGFILE} poudriere jail -c -j "${jail_name}" -v ${FREEBSD_PARENT_BRANCH} \
@@ -1979,7 +2419,7 @@ poudriere_bulk() {
 		cp -f "${BUILDER_TOOLS}/conf/pfPorts/make.conf" /usr/local/etc/poudriere.d/${POUDRIERE_PORTS_NAME}-make.conf
 	fi
 
-	# Change version of AISense meta ports for snapshots
+	# Change version of DISense meta ports for snapshots
 	if [ -z "${_IS_RELEASE}" ]; then
 		local _meta_pkg_version="$(echo "${PRODUCT_VERSION}" | sed 's,DEVELOPMENT,ALPHA,')-${DATESTRING}"
 		sed -i '' \
@@ -2066,6 +2506,36 @@ snapshots_create_latest_symlink() {
 	ln -sf $(basename ${_image}).sha256 ${_symlink}.sha256
 }
 
+snapshots_copy_to_staging_nanobsd() {
+	for NANOTYPE in nanobsd nanobsd-vga; do
+		for FILESIZE in ${1}; do
+			FILENAMEFULL="$(nanobsd_image_filename ${FILESIZE} ${NANOTYPE}).gz"
+			FILENAMEUPGRADE="$(nanobsd_image_filename ${FILESIZE} ${NANOTYPE} 1).gz"
+			mkdir -p $STAGINGAREA/nanobsd
+			mkdir -p $STAGINGAREA/nanobsdupdates
+
+			cp -l $IMAGES_FINAL_DIR/$FILENAMEFULL $STAGINGAREA/nanobsd/ 2>/dev/null
+			cp -l $IMAGES_FINAL_DIR/$FILENAMEUPGRADE $STAGINGAREA/nanobsdupdates 2>/dev/null
+
+			if [ -f $STAGINGAREA/nanobsd/$FILENAMEFULL ]; then
+				create_sha256 $STAGINGAREA/nanobsd/$FILENAMEFULL
+			fi
+			if [ -f $STAGINGAREA/nanobsdupdates/$FILENAMEUPGRADE ]; then
+				create_sha256 $STAGINGAREA/nanobsdupdates/$FILENAMEUPGRADE
+			fi
+
+			# Copy NanoBSD auto update:
+			if [ -f $STAGINGAREA/nanobsdupdates/$FILENAMEUPGRADE ]; then
+				cp -l $STAGINGAREA/nanobsdupdates/$FILENAMEUPGRADE $STAGINGAREA/latest-${NANOTYPE}-$FILESIZE.img.gz 2>/dev/null
+				create_sha256 $STAGINGAREAA/latest-${NANOTYPE}-$FILESIZE.img.gz
+				# NOTE: Updates need a file with output similar to date output
+				# Use the file generated at start of snapshots_dobuilds() to be consistent on times
+				cp $BUILTDATESTRINGFILE $STAGINGAREA/version-${NANOTYPE}-$FILESIZE
+			fi
+		done
+	done
+}
+
 snapshots_copy_to_staging_iso_updates() {
 	local _img=""
 
@@ -2103,7 +2573,7 @@ snapshots_copy_to_staging_iso_updates() {
 
 snapshots_scp_files() {
 	if [ -z "${RSYNC_COPY_ARGUMENTS}" ]; then
-		RSYNC_COPY_ARGUMENTS="-ave ssh -p ${RSYNC_SSH_PORT} --timeout=60"
+		RSYNC_COPY_ARGUMENTS="-ave ssh --timeout=60"
 	fi
 
 	snapshots_update_status ">>> Copying core pkg repo to ${PKG_RSYNC_HOSTNAME}"
@@ -2114,19 +2584,24 @@ snapshots_scp_files() {
 		snapshots_update_status ">>> Copying files to ${_rsyncip}"
 
 		# Ensure directory(s) are available
-		ssh -p ${RSYNC_SSH_PORT} ${RSYNCUSER}@${_rsyncip} "mkdir -p ${RSYNCPATH}/installer"
-		ssh -p ${RSYNC_SSH_PORT} ${RSYNCUSER}@${_rsyncip} "mkdir -p ${RSYNCPATH}/updates"
+		ssh ${RSYNCUSER}@${_rsyncip} "mkdir -p ${RSYNCPATH}/installer"
+		ssh ${RSYNCUSER}@${_rsyncip} "mkdir -p ${RSYNCPATH}/updates"
+		ssh ${RSYNCUSER}@${_rsyncip} "mkdir -p ${RSYNCPATH}/nanobsd"
 		if [ -d $STAGINGAREA/virtualization ]; then
-			ssh -p ${RSYNC_SSH_PORT} ${RSYNCUSER}@${_rsyncip} "mkdir -p ${RSYNCPATH}/virtualization"
+			ssh ${RSYNCUSER}@${_rsyncip} "mkdir -p ${RSYNCPATH}/virtualization"
 		fi
-		ssh -p ${RSYNC_SSH_PORT} ${RSYNCUSER}@${_rsyncip} "mkdir -p ${RSYNCPATH}/.updaters"
+		ssh ${RSYNCUSER}@${_rsyncip} "mkdir -p ${RSYNCPATH}/.updaters"
 		# ensure permissions are correct for r+w
-		ssh -p ${RSYNC_SSH_PORT} ${RSYNCUSER}@${_rsyncip} "chmod -R ug+rw ${RSYNCPATH}/."
+		ssh ${RSYNCUSER}@${_rsyncip} "chmod -R ug+rw ${RSYNCPATH}/."
 		rsync $RSYNC_COPY_ARGUMENTS $STAGINGAREA/${PRODUCT_NAME}${PRODUCT_NAME_SUFFIX}-*iso* \
 			${RSYNCUSER}@${_rsyncip}:${RSYNCPATH}/installer/
 		rsync $RSYNC_COPY_ARGUMENTS $STAGINGAREA/${PRODUCT_NAME}${PRODUCT_NAME_SUFFIX}-memstick* \
 			${RSYNCUSER}@${_rsyncip}:${RSYNCPATH}/installer/
 		rsync $RSYNC_COPY_ARGUMENTS $STAGINGAREA/${PRODUCT_NAME}${PRODUCT_NAME_SUFFIX}-*Update* \
+			${RSYNCUSER}@${_rsyncip}:${RSYNCPATH}/updates/
+		rsync $RSYNC_COPY_ARGUMENTS $STAGINGAREA/nanobsd/* \
+			${RSYNCUSER}@${_rsyncip}:${RSYNCPATH}/nanobsd/
+		rsync $RSYNC_COPY_ARGUMENTS $STAGINGAREA/nanobsdupdates/* \
 			${RSYNCUSER}@${_rsyncip}:${RSYNCPATH}/updates/
 		if [ -d $STAGINGAREA/virtualization ]; then
 			rsync $RSYNC_COPY_ARGUMENTS $STAGINGAREA/virtualization/* \
@@ -2135,14 +2610,34 @@ snapshots_scp_files() {
 
 		# Rather than copy these twice, use ln to link to the latest one.
 
-		ssh -p ${RSYNC_SSH_PORT} ${RSYNCUSER}@${_rsyncip} "rm -f ${RSYNCPATH}/.updaters/latest.tgz"
-		ssh -p ${RSYNC_SSH_PORT} ${RSYNCUSER}@${_rsyncip} "rm -f ${RSYNCPATH}/.updaters/latest.tgz.sha256"
+		ssh ${RSYNCUSER}@${_rsyncip} "rm -f ${RSYNCPATH}/.updaters/latest.tgz"
+		ssh ${RSYNCUSER}@${_rsyncip} "rm -f ${RSYNCPATH}/.updaters/latest.tgz.sha256"
 
 		LATESTFILENAME=$(basename ${UPDATES_TARBALL_FILENAME})
-		ssh -p ${RSYNC_SSH_PORT} ${RSYNCUSER}@${_rsyncip} "ln -s ${RSYNCPATH}/updates/${LATESTFILENAME} \
+		ssh ${RSYNCUSER}@${_rsyncip} "ln -s ${RSYNCPATH}/updates/${LATESTFILENAME} \
 			${RSYNCPATH}/.updaters/latest.tgz"
-		ssh -p ${RSYNC_SSH_PORT} ${RSYNCUSER}@${_rsyncip} "ln -s ${RSYNCPATH}/updates/${LATESTFILENAME}.sha256 \
+		ssh ${RSYNCUSER}@${_rsyncip} "ln -s ${RSYNCPATH}/updates/${LATESTFILENAME}.sha256 \
 			${RSYNCPATH}/.updaters/latest.tgz.sha256"
+
+		for i in ${FLASH_SIZE}
+		do
+			ssh ${RSYNCUSER}@${_rsyncip} "rm -f ${RSYNCPATH}/.updaters/latest-nanobsd-${i}.img.gz"
+			ssh ${RSYNCUSER}@${_rsyncip} "rm -f ${RSYNCPATH}/.updaters/latest-nanobsd-${i}.img.gz.sha256"
+			ssh ${RSYNCUSER}@${_rsyncip} "rm -f ${RSYNCPATH}/.updaters/latest-nanobsd-vga-${i}.img.gz"
+			ssh ${RSYNCUSER}@${_rsyncip} "rm -f ${RSYNCPATH}/.updaters/latest-nanobsd-vga-${i}.img.gz.sha256"
+
+			FILENAMEUPGRADE="$(nanobsd_image_filename ${i} nanobsd 1).gz"
+			ssh ${RSYNCUSER}@${_rsyncip} "ln -s ${RSYNCPATH}/updates/${FILENAMEUPGRADE} \
+				${RSYNCPATH}/.updaters/latest-nanobsd-${i}.img.gz"
+			ssh ${RSYNCUSER}@${_rsyncip} "ln -s ${RSYNCPATH}/updates/${FILENAMEUPGRADE}.sha256 \
+				${RSYNCPATH}/.updaters/latest-nanobsd-${i}.img.gz.sha256"
+
+			FILENAMEUPGRADE="$(nanobsd_image_filename ${i} nanobsd-vga 1).gz"
+			ssh ${RSYNCUSER}@${_rsyncip} "ln -s ${RSYNCPATH}/updates/${FILENAMEUPGRADE} \
+				${RSYNCPATH}/.updaters/latest-nanobsd-vga-${i}.img.gz"
+			ssh ${RSYNCUSER}@${_rsyncip} "ln -s ${RSYNCPATH}/updates/${FILENAMEUPGRADE}.sha256 \
+				${RSYNCPATH}/.updaters/latest-nanobsd-vga-${i}.img.gz.sha256"
+		done
 
 		rsync $RSYNC_COPY_ARGUMENTS $STAGINGAREA/version* \
 			${RSYNCUSER}@${_rsyncip}:${RSYNCPATH}/.updaters

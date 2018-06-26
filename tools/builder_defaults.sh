@@ -2,6 +2,61 @@
 #
 # builder_defaults.sh
 #
+# part of pfSense (https://www.pfsense.org)
+# Copyright (c) 2004-2016 Electric Sheep Fencing, LLC
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#
+# 1. Redistributions of source code must retain the above copyright notice,
+#    this list of conditions and the following disclaimer.
+#
+# 2. Redistributions in binary form must reproduce the above copyright
+#    notice, this list of conditions and the following disclaimer in
+#    the documentation and/or other materials provided with the
+#    distribution.
+#
+# 3. All advertising materials mentioning features or use of this software
+#    must display the following acknowledgment:
+#    "This product includes software developed by the pfSense Project
+#    for use in the pfSense® software distribution. (http://www.pfsense.org/).
+#
+# 4. The names "pfSense" and "pfSense Project" must not be used to
+#    endorse or promote products derived from this software without
+#    prior written permission. For written permission, please contact
+#    coreteam@pfsense.org.
+#
+# 5. Products derived from this software may not be called "pfSense"
+#    nor may "pfSense" appear in their names without prior written
+#    permission of the Electric Sheep Fencing, LLC.
+#
+# 6. Redistributions of any form whatsoever must retain the following
+#    acknowledgment:
+#
+# "This product includes software developed by the pfSense Project
+# for use in the pfSense software distribution (http://www.pfsense.org/).
+#
+# THIS SOFTWARE IS PROVIDED BY THE pfSense PROJECT ``AS IS'' AND ANY
+# EXPRESSED OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR
+# PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE pfSense PROJECT OR
+# ITS CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+# SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT
+# NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES;
+# LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION)
+# HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+# STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+# ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED
+# OF THE POSSIBILITY OF SUCH DAMAGE.
+
+###########################################
+# Product builder configuration file      #
+# Please don't modify this file, you      #
+# can put your settings and options       #
+# in build.conf, which is sourced at the  #
+# beginning of this file                  #
+###########################################
 
 if [ -z "${BUILDER_ROOT}" ]; then
 	echo ">>> ERROR: BUILDER_ROOT must be defined by script that includes builder_defaults.sh"
@@ -20,6 +75,7 @@ if [ ! -d "${BUILDER_TOOLS}" ]; then
 	exit 1
 fi
 
+
 # Make sure pkg will not be interactive
 export ASSUME_ALWAYS_YES=true
 
@@ -28,6 +84,7 @@ export ASSUME_ALWAYS_YES=true
 #  Tier 2: ARM, PowerPC, ia64, Sparc64 and sun4v
 #  Tier 3: MIPS and S/390
 #  Tier 4: None at the moment
+#  Source: http://www.freebsd.org/doc/en/articles/committers-guide/archs.html
 export TARGET=${TARGET:-"`uname -m`"}
 export TARGET_ARCH=${TARGET_ARCH:-${TARGET}}
 # Set TARGET_ARCH_CONF_DIR
@@ -42,12 +99,13 @@ if [ ! -d ${SCRATCHDIR} ]; then
 fi
 
 # Product details
-export PRODUCT_NAME=${PRODUCT_NAME:-"AISense"}
+export PRODUCT_NAME=${PRODUCT_NAME:-"DISense"}
 export PRODUCT_NAME_SUFFIX=${PRODUCT_NAME_SUFFIX:-"-CE"}
-export PRODUCT_URL=${PRODUCT_URL:-"https://github.com/AISense-UTM"}
+export PRODUCT_URL=${PRODUCT_URL:-"https://github.com/SrijanNandi/DISense.git"}
 export PRODUCT_SRC=${PRODUCT_SRC:-"${BUILDER_ROOT}/src"}
-export PRODUCT_EMAIL=${PRODUCT_EMAIL:-"sales@infrassist.com"}
+export PRODUCT_EMAIL=${PRODUCT_EMAIL:-"coreteam@disense.com"}
 export XML_ROOTOBJ=${XML_ROOTOBJ:-$(echo "${PRODUCT_NAME}" | tr '[[:upper:]]' '[[:lower:]]')}
+
 
 if [ -z "${PRODUCT_VERSION}" ]; then
 	if [ ! -f ${PRODUCT_SRC}/etc/version ]; then
@@ -94,6 +152,7 @@ case "${FREEBSD_REPO_BASE}" in
 		export FREEBSD_REPO_BASE_POUDRIERE="${FREEBSD_REPO_BASE}"
 		;;
 esac
+
 
 # Leave this alone.
 export SRC_CONF=${SRC_CONF:-"${FREEBSD_SRC_DIR}/release/conf/${PRODUCT_NAME}_src.conf"}
@@ -207,7 +266,6 @@ echo "$BUILTDATESTRING" > $BUILTDATESTRINGFILE
 STAGING_HOSTNAME=${STAGING_HOSTNAME:-"192.168.1.228"}
 
 # Poudriere
-# Poudriere
 export ZFS_TANK=${ZFS_TANK:-"zroot"}
 export ZFS_ROOT=${ZFS_ROOT:-"/poudriere"}
 export POUDRIERE_PORTS_NAME=${POUDRIERE_PORTS_NAME:-"${PRODUCT_NAME}_${POUDRIERE_BRANCH}"}
@@ -250,7 +308,7 @@ export PKG_RSYNC_LOGS=${PKG_RSYNC_LOGS:-"/usr/local/poudriere/data/packages/logs
 # Final packages server
 if [ -n "${_IS_RELEASE}" ]; then
 	export PKG_FINAL_RSYNC_HOSTNAME=${PKG_FINAL_RSYNC_HOSTNAME:-"192.168.1.224"}
-	export PKG_FINAL_RSYNC_DESTDIR=${PKG_FINAL_RSYNC_DESTDIR:-"/usr/local/poudriere/data/packages"}
+	export PKG_FINAL_RSYNC_DESTDIR=${PKG_FINAL_RSYNC_DESTDIR:-"/usr/local/pudriere/data/packages"}
 else
 	export PKG_FINAL_RSYNC_HOSTNAME=${PKG_FINAL_RSYNC_HOSTNAME:-${STAGING_HOSTNAME}}
 	export PKG_FINAL_RSYNC_DESTDIR=${PKG_FINAL_RSYNC_DESTDIR:-"/usr/local/poudriere/data/packages/DEVELOPMENT"}
@@ -260,11 +318,11 @@ export PKG_FINAL_RSYNC_SSH_PORT=${PKG_FINAL_RSYNC_SSH_PORT:-"2224"}
 export SKIP_FINAL_RSYNC=${SKIP_FINAL_RSYNC:-}
 
 # pkg repo variables
-export REPO_HOSTNAME=${REPO_HOSTNAME:-"aisense.infrassist.com"}
+export REPO_HOSTNAME=${REPO_HOSTNAME:-"disense.com"
 export USE_PKG_REPO_STAGING="1"
-export PKG_REPO_SERVER_DEVEL=${PKG_REPO_SERVER_DEVEL:-"pkg+http://${REPO_HOSTNAME}:8081"}
-export PKG_REPO_SERVER_RELEASE=${PKG_REPO_SERVER_RELEASE:-"pkg+http://${REPO_HOSTNAME}:8081"}
-export PKG_REPO_SERVER_STAGING=${PKG_REPO_SERVER_STAGING:-"pkg+http://${REPO_HOSTNAME}:8081"}
+export PKG_REPO_SERVER_DEVEL=${PKG_REPO_SERVER_DEVEL:-"pkg+https://${REPO_HOSTNAME}"}
+export PKG_REPO_SERVER_RELEASE=${PKG_REPO_SERVER_RELEASE:-"pkg+https://${REPO_HOSTNAME}"}
+export PKG_REPO_SERVER_STAGING=${PKG_REPO_SERVER_STAGING:-"pkg+http://${REPO_HOSTNAME}"}
 
 if [ -n "${_IS_RELEASE}" ]; then
 	export PKG_REPO_BRANCH_RELEASE=${PKG_REPO_BRANCH_RELEASE:-${POUDRIERE_BRANCH}}
@@ -341,6 +399,5 @@ else
 	export SNAPSHOTS_RSYNCUSER=${RSYNCUSER}
 fi
 
-export VENDOR_NAME=${VENDOR_NAME:-"AISense"}
+export VENDOR_NAME=${VENDOR_NAME:-"DISense"}
 export OVF_INFO=${OVF_INFO:-"none"}
-
