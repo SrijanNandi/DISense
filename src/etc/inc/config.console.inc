@@ -148,7 +148,7 @@ WAN. Otherwise, WAN will be temporarily assigned to the next
 available NIC found regardless of activity. The WAN interface
 should then be assigned and configured as required.
 
-Please make the AISense NIC connections now.
+Please make the DISense NIC connections now.
 The system will continue checking until they have been made.
 
 Searching for active interfaces...

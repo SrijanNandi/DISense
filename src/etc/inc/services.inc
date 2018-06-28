@@ -2146,7 +2146,7 @@ function services_dnsmasq_configure($restart_dhcp = true) {
 		if (isset($config['dnsmasq']['no_private_reverse'])) {
 			/* Note: Carrier Grade NAT (CGN) addresses 100.64.0.0/10 are intentionally not here. */
 			/* End-users should not be aware of CGN addresses, so reverse lookups for these should not happen. */
-			/* Just the AISense WAN might get a CGN address from an ISP. */
+			/* Just the DISense WAN might get a CGN address from an ISP. */
 
 			// Build an array of domain overrides to help in checking for matches.
 			$override_a = array();
@@ -2339,7 +2339,7 @@ EOD;
 		}
 
 		$platform = trim(file_get_contents('/etc/platform'));
-		if (($platform == "AISense") && ($g['product_name'] != "AISense")) {
+		if (($platform == "DISense") && ($g['product_name'] != "DISense")) {
 			$platform = $g['product_name'];
 		}
 		$sysDescr = "{$g['product_name']} " . php_uname("n") .
@@ -2347,7 +2347,7 @@ EOD;
 			" " . php_uname("r") . " " . php_uname("m");
 
 		$snmpdconf .= <<<EOD
-system := 1     # AISense
+system := 1     # DISense
 %snmpd
 sysDescr			= "{$sysDescr}"
 begemotSnmpdDebugDumpPdus       = 2
@@ -2656,7 +2656,7 @@ function configure_cron() {
 
 	for ($i = 0; $i < count($crontab_contents); $i++) {
 		$cron_item =& $crontab_contents[$i];
-		if (strpos($cron_item, "# AISense specific crontab entries") !== false) {
+		if (strpos($cron_item, "# DISense specific crontab entries") !== false) {
 			array_splice($crontab_contents, $i - 1);
 			break;
 		}
@@ -2666,7 +2666,7 @@ function configure_cron() {
 
 	if (is_array($config['cron']['item'])) {
 		$crontab_contents .= "#\n";
-		$crontab_contents .= "# AISense specific crontab entries\n";
+		$crontab_contents .= "# DISense specific crontab entries\n";
 		$crontab_contents .= "# " .gettext("Created:") . " " . date("F j, Y, g:i a") . "\n";
 		$crontab_contents .= "#\n";
 

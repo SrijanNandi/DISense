@@ -66,7 +66,7 @@ $g = array(
 	"base_packages" => "siproxd",
 	"event_address" => "unix:///var/run/check_reload_status",
 	"factory_shipped_username" => "admin",
-	"factory_shipped_password" => "aisense",
+	"factory_shipped_password" => "disense",
 	"upload_path" => "/root",
 	"dhcpd_chroot_path" => "/var/dhcpd",
 	"unbound_chroot_path" => "/var/unbound",
@@ -82,9 +82,9 @@ $g = array(
 	"cf_path" => "/cf",
 	"cf_conf_path" => "/cf/conf",
 	"www_path" => "/usr/local/www",
-	"xml_rootobj" => "aisense",
+	"xml_rootobj" => "disense",
 	"admin_group" => "admins",
-	"product_name" => "AISense",
+	"product_name" => "DISense",
 	"product_version" => trim(file_get_contents("/etc/version"), " \n"),
 	"product_copyright" => "Electric Sheep Fencing LLC",
 	"product_copyright_url" => "https://pfsense.org/license",
@@ -110,7 +110,7 @@ $g = array(
 	"services_dhcp_server_enable" => true,
 	"wireless_regex" => "/^(ndis|wi|ath|an|ral|ural|iwi|wlan|rum|run|bwn|zyd|mwl|bwi|ipw|iwn|malo|uath|upgt|urtw|wpi)/",
 	"help_base_url" => "/help.php",
-	"pkg_prefix" => "AISense-pkg-",
+	"pkg_prefix" => "DISense-pkg-",
 	"default_timezone" => "Etc/UTC",
 	"language" => "en_US"
 );
@@ -149,11 +149,11 @@ if (file_exists("/etc/platform")) {
 
 	$g['platform'] = trim(file_get_contents("/etc/platform"));
 	if ($g['platform'] == "nanobsd") {
-		$g['firmware_update_text']="AISense-*.img.gz";
+		$g['firmware_update_text']="DISense-*.img.gz";
 		$g['hidebackupbeforeupgrade'] = true;
 		$g['default_config_backup_count'] = 5;
 	} else {
-		$g['firmware_update_text']="AISense-*.tgz";
+		$g['firmware_update_text']="DISense-*.tgz";
 		$g['default_config_backup_count'] = 30;
 	}
 } else { 

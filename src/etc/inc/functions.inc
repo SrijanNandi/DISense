@@ -63,9 +63,9 @@ if (!function_exists("gettext")) {
 }
 
 if (!function_exists("pfSenseHeader")) {
-	/****f* aisense-utils/pfSenseHeader
+	/****f* disense-utils/pfSenseHeader
 	 * NAME
-	 *   AISenseHeader
+	 *   DISenseHeader
 	 * INPUTS
 	 *   none
 	 * RESULT
@@ -171,7 +171,7 @@ if (!function_exists("dom_title")) {
 require_once("interfaces.inc");
 require_once("gwlb.inc");
 require_once("services.inc");
-require_once("aisense-utils.inc");
+require_once("disense-utils.inc");
 require_once("certs.inc");
 require_once("system.inc");
 require_once("vslb.inc");

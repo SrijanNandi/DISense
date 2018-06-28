@@ -84,7 +84,7 @@ function encrypted_configxml() {
 			echo "\nEnter the password to decrypt config.xml: ";
 			$decrypt_password = chop(fgets($fp));
 			$data = decrypt_data($configtxt, $decrypt_password);
-			if (!strstr($data, "<aisense>")) {
+			if (!strstr($data, "<disense>")) {
 				$data = "";
 			}
 			if ($data) {
@@ -120,7 +120,7 @@ function parse_config($parse = false) {
 		$last_backup = discover_last_backup();
 		if ($last_backup) {
 			log_error(gettext("No config.xml found, attempting last known config restore."));
-			file_notice("config.xml", gettext("No config.xml found, attempting last known config restore."), "pfSenseConfigurator", "");
+			file_notice("config.xml", gettext("No config.xml found, attempting last known config restore."), "DISenseConfigurator", "");
 			restore_backup("{$g['conf_path']}/backup/{$last_backup}");
 		} else {
 			unlock($lockkey);
@@ -161,7 +161,7 @@ function parse_config($parse = false) {
 				die(gettext("Config.xml is corrupted and is 0 bytes.  Could not restore a previous backup."));
 			}
 		}
-		$config = parse_xml_config($g['conf_path'] . '/config.xml', array($g['xml_rootobj'], 'aisense'));
+		$config = parse_xml_config($g['conf_path'] . '/config.xml', array($g['xml_rootobj'], 'disense'));
 		if ($config == -1) {
 			$last_backup = discover_last_backup();
 			if ($last_backup) {
@@ -382,7 +382,7 @@ function conf_mount_ro() {
 
 	/* Do not trust $g['platform'] since this can be clobbered during factory reset. */
 	$platform = trim(file_get_contents("/etc/platform"));
-	/* do not umount on cdrom or AISense platforms */
+	/* do not umount on cdrom or DISense platforms */
 	if ($platform == "cdrom" or $platform == $g['product_name']) {
 		return;
 	}
@@ -835,7 +835,7 @@ function cleanup_backupcache($lock = false) {
 			if (platform_booting()) {
 				echo ".";
 			}
-			$newxml = parse_xml_config($backup, array($g['xml_rootobj'], 'aisense'));
+			$newxml = parse_xml_config($backup, array($g['xml_rootobj'], 'disense'));
 			if ($newxml == "-1") {
 				log_error(sprintf(gettext("The backup cache file %s is corrupted.  Unlinking."), $backup));
 				unlink($backup);
